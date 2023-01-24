@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>exophora_estimator</name>
+  <version>1.0.0</version>
+  <description>The exophora_estimator package</description>
+  <maintainer email="hasegawa.shoichi@em.ci.ritsumei.ac.jp">root</maintainer>
+  <license>TODO</license>
+
+  <build_depend>rospy</build_depend>
+  <build_export_depend>rospy</build_export_depend>
+  <exec_depend>rospy</exec_depend>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+</package>
+

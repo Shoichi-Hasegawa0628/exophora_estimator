@@ -1,0 +1,10 @@
+uint16 id
+float32 mean_x
+float32 mean_y
+float32 std_x
+float32 std_y
+float32 covariance
+float32 probability
+uint8 r
+uint8 g
+uint8 b
