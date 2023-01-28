@@ -1,129 +1,88 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+# ROS
 import rospy
-import os
-import csv
-import tf
-from tf import TransformListener
-import tf2_ros
-import tf2_geometry_msgs
-from std_msgs.msg import String, Header
-from geometry_msgs.msg import Pose, PoseStamped
-from sensor_msgs.msg import PointCloud2
 from sensor_msgs.msg import CompressedImage, Image
-import cv2
-from cv_bridge import CvBridge
-import time
+
+# Standard
 import numpy as np
-import statistics
-import math
-from visualization_msgs.msg import Marker, MarkerArray
-# 正規分布
-from scipy.stats import multivariate_normal
-# フォンミーゼス分布
-from scipy.stats import vonmises
+import yaml
+# from PIL import Image
+# import matplotlib.pyplot as plt
 
-from PIL import Image
-import matplotlib.pyplot as plt
+# Self
+from modules import (
+    calculate_pointing_vector,
+    dataset,
+    demonstrative_region_estimator,
+    get_pose_landmark,
+    pointing_estimator,
+    visualize_pointing_trajectory
+)
 
-# 下4つはmediapipe用
-import mediapipe as mp
-mp_holistic = mp.solutions.holistic
-mp_drawing = mp.solutions.drawing_utils
-mp_pose = mp.solutions.pose
-
-from ros_numpy.point_cloud2 import pointcloud2_to_xyz_array
-import rviz_gaussian_distribution_msgs.msg as rgd_msgs
-from matplotlib import colors
+calculate_pointing_func = calculate_pointing_vector.CalculatePointingVector()
+dataset_func = dataset.Dataset()
+demonstrative_estimator_func = demonstrative_region_estimator.DemonstrativeRegionEstimator()
+get_pose_landmark_func = get_pose_landmark.GetPoseLandmark()
+pointing_estimator_func = pointing_estimator.PointingEstimator()
+visualize_pointing_func = visualize_pointing_trajectory.VisualizePointingTrajectory()
 
 
 class ExophoraEstimator():
-    def __init__(self, rgb_img_topic="/hsrb/head_rgbd_sensor/rgb/image_raw/compressed",
-                 point_cloud_topic="/hsrb/head_rgbd_sensor/depth_registered/rectified_points",
-                 global_pose_topic = "/global_pose"):
+    def __init__(self):
+        self.object_category = ["Bottle", "Stuffed Toy", "Book", "Cup"]
+        self.target_object_name = "Bottle"
 
-        self._object_class_p = []
-        self._demonstrative_p = []
-        self._pointing_p = []
-        self._wrist_x = []
-        self._wrist_y = []
-        self._wrist_z = []
-        self._eye_x = []
-        self._eye_y = []
-        self._eye_z = []
-        self._object_category = ["Bottle", "Stuffed Toy", "Book", "Cup"]
-        self._point_ground = np.array([0, 0, 0])
-        self._kosoa = "a"
+        with open('yolov5m_Object365.yaml', 'r') as yml:
+            object_yaml = yaml.load(yml, Loader=yaml.SafeLoader)
+            self.object_365 = object_yaml['names']
 
-        self.rgb_image_topic_name = rgb_img_topic
-        self.point_cloud_name = point_cloud_topic
-        self.global_pose_topic_name = global_pose_topic
-        self.cv_bridge = CvBridge()
-
-        # tf
-        self._point_cloud_header = Header()
-        self.tf_buffer = tf2_ros.Buffer()
-        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
-        self.tflistener = TransformListener()
-
-        # MediaPipe用
-        # self.mp_pose = mp.solutions.hands
-        self.mp_pose = mp.solutions.pose
-        self.mp_drawing = mp.solutions.drawing_utils
-        self.mesh_drawing_spec = self.mp_drawing.DrawingSpec(thickness=2, color=(0, 255, 0))
-        self.mark_drawing_spec = self.mp_drawing.DrawingSpec(thickness=3, circle_radius=1, color=(0, 0, 255))
+        self.kosoa = "a"
         # self.sub = rospy.Subscriber("/hsrb/head_rgbd_sensor/rgb/image_rect_color/compressed", CompressedImage, self.main)
-
         self.img_pub = rospy.Publisher("/annotated_msg/compressed", CompressedImage, queue_size=1)
-        self.point_pub = rospy.Publisher("point_pub", Marker, queue_size=1)
-        self.eye_pub = rospy.Publisher("eye_pub", Marker, queue_size=1)
-        self.vector_pub = rospy.Publisher("vector_pub", MarkerArray, queue_size=1)
-        self.distribution_publisher = rospy.Publisher("/gaussian_distribution/input/add", rgd_msgs.GaussianDistribution,
-                                                      queue_size=1)
 
 
     ### non_realtimeとrealtimeで存在する関数と存在しないものがあるため、両方を参照しながらプログラムを作成
     # 基本的には、
     def main(self):
-        self.setup_subscriber()
-
         # 物体のインデックスとカテゴリと3次元座標のリスト作成
         # リストの中身は [object number, object name, x, y, z] が20個
-        object_list = self.load_data()
+        object_list = dataset_func.load_object_position_data(self.object_category)
 
         # リストに6個の座標が格納されたらループを抜ける
-        while len(self._eye_x) < 7:
-            self.landmark_frame()
+        num = 0
+        while num < 7:
+            eye_x, eye_y, eye_z, wrist_x, wrist_y, wrist_z = get_pose_landmark_func.landmark_frame()
+            num = len(eye_x)
 
         rospy.loginfo("Skeleton could be detected!")
 
         # 指差しベクトルの計算と可視化
-        point_ground, param = self.pointing_vector(wrist_x, wrist_y, wrist_z, eye_x, eye_y, eye_z)
-        self.visualize_point()
-        self.visualize_eye()
-        self.visualize_pointing()
+        point_ground, param, wrist_frame, eye_frame = calculate_pointing_func.calculate_pointing_vector(wrist_x, wrist_y, wrist_z, eye_x, eye_y, eye_z)
+        visualize_pointing_func.visualize_point(point_ground)
+        visualize_pointing_func.visualize_eye(eys_frame)
+        visualize_pointing_func.visualize_pointing(param, wrist_frame, eye_frame)
 
-        # 指差し方向に基づく確率推定器により、対象確率の出力
+        # フォン・ミーゼス分布を用いた指差し方向に基づく確率推定器により、対象確率の出力
         # for i in range(len(object_position)):
-        self.pointing_inner_product(object_list)
+        pointing_prob = pointing_estimator_func.pointing_inner_product(object_list, wrist_frame, eye_frame)
 
         # 指示語領域に基づく確率推定器により、対象確率の出力
-        self.kosoa(object_list)
+        demonstrative_prob = demonstrative_estimator_func.calculate_demonstrative_region(object_list, wrist_frame, eye_frame, self.kosoa)
         # self.visualize_kosoa()
 
         # 物体カテゴリの信頼度スコアを取得 (物体カテゴリに基づく確率推定器)
-        #####
-        #####
+        self.target_object_id = self.object_365.index(self.target_object_name)
+        object_class_prob = dataset_func.load_conf(self.object_category, self.target_object_id)
+
+        demonstrative_prob = np.array(demonstrative_prob)
+        pointing_prob = np.array(pointing_prob)
 
 
         # 3つの確率値を掛け合わせる
-        # target_probability = self._object_class_p * self._demonstrative_p * self._visual_indicate_p
-
-        demonstrative_p = np.array(self._demonstrative_p)
-        pointing_p = np.array(self._pointing_p)
-
-        target_probability = demonstrative_p * pointing_p
+        target_probability = object_class_prob * demonstrative_prob * pointing_prob
+        # target_probability = demonstrative_prob * pointing_prob
         sum_target_probability = np.sum(target_probability)
 
         # 正規化
@@ -143,42 +102,6 @@ class ExophoraEstimator():
         print("予測した目標物体", object_list[target_index])
         # demonstrative_p = np.round(demonstrative_p, decimals=2)
         # print(demonstrative_p)
-
-    def setup_subscriber(self):
-        self.subscriber_for_point_cloud = rospy.Subscriber(
-            self.point_cloud_name,
-            PointCloud2,
-            self.point_cloud_callback,
-            queue_size=1
-        )
-
-        self.subscriber_for_rgb_image = rospy.Subscriber(
-            self.rgb_image_topic_name,
-            CompressedImage,
-            self.image_callback,
-            queue_size=1
-        )
-        self.subscriber_for_global_pose = rospy.Subscriber(
-            self.global_pose_topic_name,
-            PoseStamped,
-            self.global_pose_callback,
-            queue_size=1
-        )
-        return
-
-    def image_callback(self, msg):
-        # rospy.loginfo("Entered callback")
-        self.rgb_img = self.cv_bridge.compressed_imgmsg_to_cv2(msg)
-
-    def point_cloud_callback(self, msg):
-        self._point_cloud = pointcloud2_to_xyz_array(msg, False)
-        # rospy.loginfo("PointCloud frame id : {}".format(msg.header.frame_id))
-        self._point_cloud_header = msg.header
-
-    def global_pose_callback(self, msg):
-        self._global_pose_x = msg.pose.position.x
-        self._global_pose_y = msg.pose.position.y
-        self._global_pose_z = msg.pose.position.z
 
 
 if __name__ == '__main__':

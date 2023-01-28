@@ -9,7 +9,9 @@ class CalculatePointingVector():
     def __init__(self):
         pass
 
-    def pointing_vector(self, wrist_x, wrist_y, wrist_z, eye_x, eye_y, eye_z):
+    def calculate_pointing_vector(self, wrist_x, wrist_y, wrist_z, eye_x, eye_y, eye_z):
+        point_ground = np.array([0, 0, 0])
+
         # 手首の中央値、肘の中央値
         wrist_frame = np.array([statistics.median(wrist_x), statistics.median(wrist_y), statistics.median(wrist_z)])
         eye_frame = np.array([statistics.median(eye_x), statistics.median(eye_y), statistics.median(eye_z)])
@@ -64,7 +66,7 @@ class CalculatePointingVector():
                     break
             param = int(t)
 
-        return point_ground, param
+        return point_ground, param, wrist_frame, eye_frame
 
 
 if __name__ == '__main__':

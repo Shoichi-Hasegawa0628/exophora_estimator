@@ -1,1 +1,1 @@
-from .location_estimator import Location_Estimator
+from .exophora_estimator import ExophoraEstimator

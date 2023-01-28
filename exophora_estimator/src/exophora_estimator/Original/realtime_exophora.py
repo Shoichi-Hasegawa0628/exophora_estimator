@@ -34,15 +34,14 @@ mp_drawing = mp.solutions.drawing_utils
 mp_pose = mp.solutions.pose
 
 from ros_numpy.point_cloud2 import pointcloud2_to_xyz_array
+# ガウス分布可視化のためのもの
 import rviz_gaussian_distribution_msgs.msg as rgd_msgs
 from matplotlib import colors
 
 
 class Exophora():
 
-    def __init__(self, rgb_img_topic="/hsrb/head_rgbd_sensor/rgb/image_raw/compressed",
-                 point_cloud_topic="/hsrb/head_rgbd_sensor/depth_registered/rectified_points",
-                 global_pose_topic = "/global_pose"):
+    def __init__(self, rgb_image="/hsrb/head_rgbd_sensor/rgb/image_raw/compressed", point_cloud_topic="/hsrb/head_rgbd_sensor/depth_registered/rectified_points", global_pose_topic = "/global_pose"):
 
         self._object_class_p = []
         self._demonstrative_p = []
@@ -61,18 +60,17 @@ class Exophora():
 
         self._kosoa = "a"
 
-        self.rgb_image_topic_name = rgb_img_topic
+        self.rgb_image_topic_name = rgb_image
         self.point_cloud_name = point_cloud_topic
         self.global_pose_topic_name = global_pose_topic
         self.cv_bridge = CvBridge()
 
-        # tf用
+        # tfらへん
         self._point_cloud_header = Header()
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
-        self.tflistener = TransformListener()
 
-        # MediaPipe用
+        # mediapipeのための追加部分
         #self.mp_pose = mp.solutions.hands
         self.mp_pose = mp.solutions.pose
         self.mp_drawing = mp.solutions.drawing_utils
@@ -84,6 +82,8 @@ class Exophora():
         self.point_pub = rospy.Publisher("point_pub", Marker, queue_size = 1)
         self.eye_pub = rospy.Publisher("eye_pub", Marker, queue_size = 1)
         self.vector_pub = rospy.Publisher("vector_pub", MarkerArray, queue_size = 1)
+        self.tflistener = TransformListener()
+
         self.distribution_publisher = rospy.Publisher("/gaussian_distribution/input/add", rgd_msgs.GaussianDistribution, queue_size=1)
 
         # こっから
